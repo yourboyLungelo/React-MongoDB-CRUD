@@ -10,8 +10,12 @@ function CrudWindow() {
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState('');
 
+  // New state for comment form per item
+  const [commentForms, setCommentForms] = useState({});
+  const [commentErrors, setCommentErrors] = useState({});
+
   // Fetch items
-const fetchItems = async () => {
+  const fetchItems = async () => {
     try {
       const res = await axios.get(API_BASE + '/items');
       setItems(res.data);
@@ -21,7 +25,7 @@ const fetchItems = async () => {
   };
 
   // Fetch activity log
-const fetchActivityLog = async () => {
+  const fetchActivityLog = async () => {
     try {
       const res = await axios.get(API_BASE + '/activity');
       setActivityLog(res.data.reverse());
@@ -34,7 +38,10 @@ const fetchActivityLog = async () => {
     fetchItems();
     fetchActivityLog();
     // Poll activity log every 5 seconds
-    const interval = setInterval(fetchActivityLog, 5000);
+    const interval = setInterval(() => {
+      fetchActivityLog();
+      fetchItems();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -50,7 +57,7 @@ const fetchActivityLog = async () => {
       return;
     }
     try {
-if (isEditing) {
+      if (isEditing) {
         await axios.put(API_BASE + '/items/' + form.id, {
           name: form.name,
           description: form.description,
@@ -78,11 +85,36 @@ if (isEditing) {
   const handleDelete = async (id) => {
     setError('');
     try {
-await axios.delete(API_BASE + '/items/' + id);
+      await axios.delete(API_BASE + '/items/' + id);
       fetchItems();
       fetchActivityLog();
     } catch (err) {
       setError('Failed to delete item');
+    }
+  };
+
+  // Handle comment form change per item
+  const handleCommentChange = (itemId, e) => {
+    setCommentForms({ ...commentForms, [itemId]: e.target.value });
+  };
+
+  // Handle comment form submit per item
+  const handleCommentSubmit = async (itemId, e) => {
+    e.preventDefault();
+    setCommentErrors({ ...commentErrors, [itemId]: '' });
+    const text = commentForms[itemId];
+    if (!text) {
+      setCommentErrors({ ...commentErrors, [itemId]: 'Comment text is required' });
+      return;
+    }
+    try {
+      await axios.post(`${API_BASE}/items/${itemId}/comments`, {
+        text,
+      });
+      setCommentForms({ ...commentForms, [itemId]: '' });
+      fetchItems();
+    } catch (err) {
+      setCommentErrors({ ...commentErrors, [itemId]: 'Failed to add comment' });
     }
   };
 
@@ -129,23 +161,53 @@ await axios.delete(API_BASE + '/items/' + id);
         <h2 style={{ marginTop: '40px' }}>Items</h2>
         <ul style={{ listStyle: 'none', padding: 0 }}>
           {items.map((item) => (
-            <li key={item._id} style={{ marginBottom: '10px', borderBottom: '1px solid #ccc', paddingBottom: '10px' }}>
+            <li key={item._id} style={{ marginBottom: '20px', borderBottom: '1px solid #ccc', paddingBottom: '10px' }}>
               <strong>{item.name}</strong>
               <p>{item.description}</p>
               <button onClick={() => handleEdit(item)} style={{ marginRight: '10px' }}>
                 Edit
               </button>
               <button onClick={() => handleDelete(item._id)}>Delete</button>
+
+              <div style={{ marginTop: '10px' }}>
+                <h3>Comments</h3>
+                {item.comments && item.comments.length > 0 ? (
+                  <ul style={{ listStyle: 'none', padding: 0 }}>
+                    {item.comments.map((comment, index) => (
+                      <li key={index} style={{ marginBottom: '8px' }}>
+                        <p>{comment.text}</p>
+                        <small>{new Date(comment.date).toLocaleString()}</small>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No comments yet.</p>
+                )}
+
+                <form onSubmit={(e) => handleCommentSubmit(item._id, e)} style={{ marginTop: '10px' }}>
+                  <textarea
+                    placeholder="Add a comment"
+                    value={commentForms[item._id] || ''}
+                    onChange={(e) => handleCommentChange(item._id, e)}
+                    rows={3}
+                    style={{ width: '100%', padding: '8px', fontSize: '14px' }}
+                  />
+                  {commentErrors[item._id] && <div style={{ color: 'red' }}>{commentErrors[item._id]}</div>}
+                  <button type="submit" style={{ marginTop: '5px', padding: '6px 12px', cursor: 'pointer' }}>
+                    Add Comment
+                  </button>
+                </form>
+              </div>
             </li>
           ))}
         </ul>
       </div>
 
       <div style={{ flex: 1 }}>
-        <h2>CRUD Activity Log</h2>
+        <h2>Activity Log</h2>
         <div
           style={{
-            height: '400px',
+            height: '600px',
             overflowY: 'scroll',
             border: '1px solid #ccc',
             padding: '10px',

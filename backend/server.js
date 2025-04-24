@@ -27,6 +27,26 @@ db.once('open', () => {
 const itemSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: String,
+  tags: [String], // array of strings
+  details: {
+    manufacturer: String,
+    warrantyPeriod: Number,
+  }, // embedded document
+  reviews: [
+    {
+      user: String,
+      comment: String,
+      rating: Number,
+      date: Date,
+    }
+  ], // array of embedded documents
+  comments: [
+    {
+      user: { type: String, required: true, default: 'Anonymous' },
+      text: { type: String, required: true },
+      date: { type: Date, default: Date.now }
+    }
+  ] // array of embedded documents for comments
 });
 
 const Item = mongoose.model('Item', itemSchema);
@@ -53,7 +73,20 @@ app.post('/items', async (req, res) => {
     if (!req.body.name) {
       throw new Error('Name field is required');
     }
-    const newItem = new Item(req.body);
+    // Validate and sanitize input
+    const itemData = {
+      name: req.body.name,
+      description: req.body.description,
+      tags: Array.isArray(req.body.tags) ? req.body.tags : [],
+      details: {
+        manufacturer: req.body.details?.manufacturer || '',
+        warrantyPeriod: req.body.details?.warrantyPeriod ? Number(req.body.details.warrantyPeriod) : undefined,
+      },
+      reviews: Array.isArray(req.body.reviews) ? req.body.reviews : [],
+      comments: Array.isArray(req.body.comments) ? req.body.comments : [],
+    };
+    console.log('Sanitized item data:', itemData);
+    const newItem = new Item(itemData);
     const savedItem = await newItem.save();
     logActivity('CREATE', savedItem);
     res.status(201).json(savedItem);
@@ -87,9 +120,22 @@ app.get('/items/:id', async (req, res) => {
 // Update
 app.put('/items/:id', async (req, res) => {
   try {
+    // Validate and sanitize input
+    const itemData = {
+      name: req.body.name,
+      description: req.body.description,
+      tags: Array.isArray(req.body.tags) ? req.body.tags : [],
+      details: {
+        manufacturer: req.body.details?.manufacturer || '',
+        warrantyPeriod: req.body.details?.warrantyPeriod ? Number(req.body.warrantyPeriod) : undefined,
+      },
+      reviews: Array.isArray(req.body.reviews) ? req.body.reviews : [],
+      comments: Array.isArray(req.body.comments) ? req.body.comments : [],
+    };
+    console.log('Sanitized update data:', itemData);
     const updatedItem = await Item.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      itemData,
       { new: true, runValidators: true }
     );
     if (!updatedItem) return res.status(404).json({ error: 'Item not found' });
@@ -108,6 +154,25 @@ app.delete('/items/:id', async (req, res) => {
     if (!deletedItem) return res.status(404).json({ error: 'Item not found' });
     logActivity('DELETE', deletedItem);
     res.json({ message: 'Item deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add comment to item
+app.post('/items/:id/comments', async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    if (!req.body.text) return res.status(400).json({ error: 'Comment text is required' });
+    const comment = {
+      user: req.body.user || 'Anonymous',
+      text: req.body.text,
+      date: new Date(),
+    };
+    item.comments.push(comment);
+    await item.save();
+    res.status(201).json(comment);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
